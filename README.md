@@ -25,6 +25,8 @@ First, install dependencies:
 npm install
 ```
 
+## CLI Commands
+
 | Command                                                   | Description                                       |
 | --------------------------------------------------------- | ------------------------------------------------- |
 | `npm run extract:css -- <url>`                            | Extract CSS resources                             |

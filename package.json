@@ -7,6 +7,7 @@
 	"scripts": {
 		"extract:css": "node cx.js --mode=css",
 		"extract:js": "node cx.js --mode=js",
+		"extract": "node cx.js",
 		"extract:all": "node cx.js",
 		"extract:all:auto": "node cx.js --all",
 		"clean": "rm -rf output/temp"
