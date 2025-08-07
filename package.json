@@ -1,0 +1,22 @@
+{
+	"name": "liferay-client-extension-extractor",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "Extract CSS or JS from a web page and generate Liferay client extensions",
+	"main": "cx.js",
+	"scripts": {
+		"extract:css": "node cx.js --mode=css",
+		"extract:js": "node cx.js --mode=js",
+		"extract:all": "node cx.js",
+		"extract:all:auto": "node cx.js --all",
+		"clean": "rm -rf output/temp"
+	},
+	"dependencies": {
+		"@inquirer/prompts": "^7.8.0",
+		"adm-zip": "^0.5.16",
+		"axios": "^1.11.0",
+		"cheerio": "^1.1.2",
+		"minimist": "^1.2.8",
+		"yaml": "^2.8.1"
+	}
+}
