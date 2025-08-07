@@ -1,4 +1,4 @@
-# Client Extension Extractor
+# Liferay Client Extension URL Extractor
 
 A CLI tool to extract all CSS and/or JS resources from a web page and generate a Liferay Client Extension (CSS or JS).
 
@@ -14,6 +14,10 @@ A CLI tool to extract all CSS and/or JS resources from a web page and generate a
     -   `global.css` or `global.js` inside `assets/`
     -   A `client-extension.yaml` with proper metadata
     -   A ZIP file with everything ready for Liferay
+
+### Video Example:
+
+https://github.com/user-attachments/assets/6c88257e-d583-4c7c-b20a-990070613d23
 
 ---
 
