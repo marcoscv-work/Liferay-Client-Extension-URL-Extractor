@@ -14,19 +14,40 @@ import chalk from 'chalk';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// --- CLI args ---
-const args = minimist(process.argv.slice(2));
+// --- CLI args (robustos) ---
+const args = minimist(process.argv.slice(2), {
+	boolean: ['all', 'no-zip', 'noZip', 'debug'],
+	alias: {
+		m: 'mode',
+		n: 'name',
+		all: 'a',
+		// permitir ambas variantes:
+		noZip: 'no-zip',
+	},
+	default: {
+		'all': false,
+		'no-zip': false,
+		'noZip': false,
+		'debug': false,
+	},
+});
+
 const url = args._[0];
 const mode = args.mode;
 const sharedName = args.name;
-const includeAll = args.all;
-const noZip = Boolean(args['no-zip'] || args.noZip); // <-- flag no-zip
+const includeAll = !!args.all;
+const noZip = !!(args['no-zip'] || args.noZip); // <- acepta ambas
+
+if (args.debug) {
+	console.log(chalk.cyan('[DEBUG] raw argv:'), process.argv.slice(2));
+	console.log(chalk.cyan('[DEBUG] parsed args:'), args);
+}
 
 if (!url) {
 	console.error(
 		`${chalk.red(
 			'❌'
-		)} Usage: node cx.js https://example.com [--mode=css|js] [--all] [--name "Name"] [--no-zip]`
+		)} Usage: node cx.js https://example.com [--mode=css|js] [--all] [--name "Name"] [--no-zip] [--debug]`
 	);
 	process.exit(1);
 }
@@ -36,15 +57,13 @@ const OUTPUT_DIR = path.join(__dirname, 'output');
 const TEMP_DIR = path.join(OUTPUT_DIR, 'temp');
 const ASSETS_DIR = path.join(TEMP_DIR, 'assets');
 
-// --- Config per mode ---
+// --- Config por modo ---
 const MODES = {
 	css: {
-		selectors: ['link[rel="stylesheet"]', 'style'],
 		fileName: 'global.css',
 		yamlType: 'globalCSS',
 	},
 	js: {
-		selectors: ['script'],
 		fileName: 'global.js',
 		yamlType: 'globalJS',
 		scriptElementAttributes: {
@@ -195,14 +214,7 @@ function generateYaml(technicalName, visibleName, currentMode, fileName) {
 	return yaml.stringify(base);
 }
 
-function saveFiles(
-	fileName,
-	content,
-	yamlContent,
-	technicalName,
-	currentMode,
-	noZipFlag
-) {
+function saveFiles(fileName, content, yamlContent, technicalName, noZipFlag) {
 	fs.mkdirSync(ASSETS_DIR, {recursive: true});
 	const filePath = path.join(ASSETS_DIR, fileName);
 	const yamlPath = path.join(TEMP_DIR, 'client-extension.yaml');
@@ -219,7 +231,7 @@ function saveFiles(
 		zip.writeZip(zipPath);
 		console.log(`${chalk.green('🎉')} Final ZIP created at: ${zipPath}`);
 
-		// Clean temp ONLY when zipping (so no-zip leaves files available)
+		// Limpiar temp SOLO si hemos zipeado
 		fs.rmSync(TEMP_DIR, {recursive: true, force: true});
 	} else {
 		console.log(
@@ -234,7 +246,7 @@ function saveFiles(
 }
 
 // --- Main extraction ---
-async function extractResources(targetUrl, currentMode, sharedVisibleName) {
+async function runOnce(targetUrl, currentMode, sharedVisibleName) {
 	console.log(
 		`${chalk.blue(
 			'🌐'
@@ -290,23 +302,16 @@ async function extractResources(targetUrl, currentMode, sharedVisibleName) {
 		fileName
 	);
 
-	saveFiles(
-		fileName,
-		combined,
-		yamlContent,
-		technicalName,
-		currentMode,
-		noZip
-	);
+	saveFiles(fileName, combined, yamlContent, technicalName, noZip);
 }
 
 // --- CLI entry point ---
 (async () => {
 	if (!mode) {
-		await extractResources(url, 'css', sharedName);
-		await extractResources(url, 'js', sharedName);
-	} else if (mode in MODES) {
-		await extractResources(url, mode, sharedName);
+		await runOnce(url, 'css', sharedName);
+		await runOnce(url, 'js', sharedName);
+	} else if (mode === 'css' || mode === 'js') {
+		await runOnce(url, mode, sharedName);
 	} else {
 		console.error(
 			`${chalk.red('❌')} Invalid mode. Use --mode=css or --mode=js`
