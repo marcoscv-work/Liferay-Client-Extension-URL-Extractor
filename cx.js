@@ -9,56 +9,90 @@ import path from 'path';
 import minimist from 'minimist';
 import {checkbox, input} from '@inquirer/prompts';
 import yaml from 'yaml';
+import chalk from 'chalk';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// CLI args
+// --- CLI args ---
 const args = minimist(process.argv.slice(2));
 const url = args._[0];
 const mode = args.mode;
 const sharedName = args.name;
+const includeAll = args.all;
+const noZip = Boolean(args['no-zip'] || args.noZip); // <-- flag no-zip
 
 if (!url) {
 	console.error(
-		'❌ Usage: node cx.js https://example.com [--mode=css|js] [--all] [--name "Name"]'
+		`${chalk.red(
+			'❌'
+		)} Usage: node cx.js https://example.com [--mode=css|js] [--all] [--name "Name"] [--no-zip]`
 	);
 	process.exit(1);
 }
 
-// Paths
+// --- Paths ---
 const OUTPUT_DIR = path.join(__dirname, 'output');
 const TEMP_DIR = path.join(OUTPUT_DIR, 'temp');
 const ASSETS_DIR = path.join(TEMP_DIR, 'assets');
 
-async function extractResources(url, mode, sharedName) {
-	console.log(`🌐 Fetching ${url} for ${mode.toUpperCase()}...`);
-	let res;
+// --- Config per mode ---
+const MODES = {
+	css: {
+		selectors: ['link[rel="stylesheet"]', 'style'],
+		fileName: 'global.css',
+		yamlType: 'globalCSS',
+	},
+	js: {
+		selectors: ['script'],
+		fileName: 'global.js',
+		yamlType: 'globalJS',
+		scriptElementAttributes: {
+			'async': true,
+			'data-attribute': 'value',
+			'data-senna-track': 'permanent',
+			'fetchpriority': 'low',
+		},
+	},
+};
+
+// --- Helpers ---
+function slugify(name, suffix) {
+	return (
+		name
+			.toLowerCase()
+			.replace(/\s+/g, '-')
+			.replace(/[^a-z0-9\-]/g, '') + `-${suffix}`
+	);
+}
+
+async function fetchPage(targetUrl) {
 	try {
-		res = await axios.get(url);
+		const res = await axios.get(targetUrl);
+		return res.data;
 	} catch (e) {
-		console.error('❌ Failed to fetch page:', e.message);
-		process.exit(1);
+		throw new Error(`Failed to fetch page: ${e.message}`);
 	}
+}
 
-	const $ = cheerio.load(res.data);
+function parseResources(html, baseUrl, currentMode) {
+	const $ = cheerio.load(html);
 	const found = [];
-
 	let inlineCounter = 1;
-	if (mode === 'css') {
+
+	if (currentMode === 'css') {
 		$('link[rel="stylesheet"], style').each((_, el) => {
 			if (el.tagName === 'link') {
 				const href = $(el).attr('href');
 				if (href) {
-					const cssUrl = new URL(href, url).href;
-					found.push({type: 'external', label: cssUrl, url: cssUrl});
+					const full = new URL(href, baseUrl).href;
+					found.push({type: 'external', label: full, url: full});
 				}
-			} else if (el.tagName === 'style') {
-				const content = $(el).html();
+			} else {
 				found.push({
 					type: 'inline',
 					label: `<style> inline #${inlineCounter++}`,
-					content,
+					content: $(el).html(),
 				});
 			}
 		});
@@ -66,8 +100,8 @@ async function extractResources(url, mode, sharedName) {
 		$('script').each((_, el) => {
 			const src = $(el).attr('src');
 			if (src) {
-				const jsUrl = new URL(src, url).href;
-				found.push({type: 'external', label: jsUrl, url: jsUrl});
+				const full = new URL(src, baseUrl).href;
+				found.push({type: 'external', label: full, url: full});
 			} else {
 				const content = $(el).html();
 				if (content?.trim()) {
@@ -81,40 +115,153 @@ async function extractResources(url, mode, sharedName) {
 		});
 	}
 
+	return found;
+}
+
+async function promptSelection(resources, currentMode, includeAllFlag) {
+	if (includeAllFlag) {
+		console.log(
+			`${chalk.green(
+				'✅'
+			)} --all flag: all ${currentMode.toUpperCase()} resources included.\n`
+		);
+		return resources;
+	}
+
+	const choices = await checkbox({
+		message: `Select which ${currentMode.toUpperCase()} resources to include:`,
+		choices: resources.map((item, i) => ({
+			name: item.label,
+			value: i.toString(),
+			checked: true,
+		})),
+	});
+
+	if (choices.length === 0) {
+		console.log(
+			`${chalk.yellow(
+				'⚠️'
+			)} No ${currentMode.toUpperCase()} selected. Skipping.`
+		);
+		return [];
+	}
+
+	return choices.map((i) => resources[parseInt(i, 10)]);
+}
+
+async function downloadResources(resources) {
+	const results = await Promise.all(
+		resources.map(async (res) => {
+			if (res.type === 'external') {
+				try {
+					const r = await axios.get(res.url);
+					console.log(
+						`${chalk.green('✅')} Loaded external: ${res.url}`
+					);
+					return `/* ${res.url} */\n${r.data}`;
+				} catch (e) {
+					console.warn(
+						`${chalk.yellow('⚠️')} Failed to load ${res.url}: ${
+							e.message
+						}`
+					);
+					return '';
+				}
+			} else {
+				console.log(`${chalk.green('✅')} Loaded ${res.label}`);
+				return `/* ${res.label} */\n${res.content}`;
+			}
+		})
+	);
+
+	return results.join('\n\n');
+}
+
+function generateYaml(technicalName, visibleName, currentMode, fileName) {
+	const base = {
+		assemble: [{from: 'assets', into: 'static'}],
+		[technicalName]: {
+			name: visibleName,
+			type: MODES[currentMode].yamlType,
+			url: fileName,
+		},
+	};
+
+	if (currentMode === 'js') {
+		base[technicalName].scriptElementAttributes =
+			MODES.js.scriptElementAttributes;
+	}
+
+	return yaml.stringify(base);
+}
+
+function saveFiles(
+	fileName,
+	content,
+	yamlContent,
+	technicalName,
+	currentMode,
+	noZipFlag
+) {
+	fs.mkdirSync(ASSETS_DIR, {recursive: true});
+	const filePath = path.join(ASSETS_DIR, fileName);
+	const yamlPath = path.join(TEMP_DIR, 'client-extension.yaml');
+
+	fs.writeFileSync(filePath, content, 'utf8');
+	fs.writeFileSync(yamlPath, yamlContent, 'utf8');
+
+	const zipPath = path.join(OUTPUT_DIR, `${technicalName}.zip`);
+
+	if (!noZipFlag) {
+		const zip = new AdmZip();
+		zip.addLocalFile(filePath, 'assets');
+		zip.addLocalFile(yamlPath);
+		zip.writeZip(zipPath);
+		console.log(`${chalk.green('🎉')} Final ZIP created at: ${zipPath}`);
+
+		// Clean temp ONLY when zipping (so no-zip leaves files available)
+		fs.rmSync(TEMP_DIR, {recursive: true, force: true});
+	} else {
+		console.log(
+			`${chalk.green('📂')} Files saved without ZIP in: ${TEMP_DIR}`
+		);
+		console.log(
+			`${chalk.yellow(
+				'ℹ️'
+			)} Note: running both modes without --mode will overwrite temp/ on the second run.`
+		);
+	}
+}
+
+// --- Main extraction ---
+async function extractResources(targetUrl, currentMode, sharedVisibleName) {
+	console.log(
+		`${chalk.blue(
+			'🌐'
+		)} Fetching ${targetUrl} for ${currentMode.toUpperCase()}...`
+	);
+
+	const html = await fetchPage(targetUrl);
+	const found = parseResources(html, targetUrl, currentMode);
+
 	if (found.length === 0) {
-		console.log(`❌ No ${mode.toUpperCase()} resources found.`);
+		console.log(
+			`${chalk.red(
+				'❌'
+			)} No ${currentMode.toUpperCase()} resources found.`
+		);
 		return;
 	}
 
-	let selected;
-	if (args.all) {
-		selected = found;
-		console.log(
-			`✅ --all flag: all ${mode.toUpperCase()} resources included.\n`
-		);
-	} else {
-		const choices = await checkbox({
-			message: `Select which ${mode.toUpperCase()} resources to include:`,
-			choices: found.map((item, i) => ({
-				name: item.label,
-				value: i.toString(),
-				checked: true,
-			})),
-		});
-		if (choices.length === 0) {
-			console.log(`⚠️ No ${mode.toUpperCase()} selected. Skipping.`);
-			return;
-		}
-		selected = choices.map((i) => found[parseInt(i)]);
-	}
+	const selected = await promptSelection(found, currentMode, includeAll);
+	if (selected.length === 0) return;
 
-	let nameInput = sharedName;
-
-	if (!nameInput) {
-		nameInput = await input({
-			message: `Visible name of the Client Extension (${mode.toUpperCase()}):`,
+	let visibleName = sharedVisibleName;
+	if (!visibleName) {
+		visibleName = await input({
+			message: `Visible name of the Client Extension (${currentMode.toUpperCase()}):`,
 			default:
-				mode === 'css'
+				currentMode === 'css'
 					? 'Liferay CSS Client Extension'
 					: 'Liferay JS Client Extension',
 			validate: (val) => {
@@ -126,82 +273,44 @@ async function extractResources(url, mode, sharedName) {
 		});
 	}
 
-	const technicalName =
-		nameInput
-			.toLowerCase()
-			.replace(/\s+/g, '-')
-			.replace(/[^a-z0-9\-]/g, '') + `-${mode}`;
+	const technicalName = slugify(visibleName, currentMode);
+	const fileName = MODES[currentMode].fileName;
 
-	const filename = mode === 'css' ? 'global.css' : 'global.js';
-	const FILE_PATH = path.join(ASSETS_DIR, filename);
-	const zipFilename = `${technicalName}.zip`;
-	const ZIP_PATH = path.join(OUTPUT_DIR, zipFilename);
-	const YAML_PATH = path.join(TEMP_DIR, 'client-extension.yaml');
+	console.log(
+		`${chalk.blue('📄')} Selected ${currentMode.toUpperCase()} blocks: ${
+			selected.length
+		}`
+	);
 
-	console.log(`📄 Selected ${mode.toUpperCase()} blocks: ${selected.length}`);
-	let combined = '';
+	const combined = await downloadResources(selected);
+	const yamlContent = generateYaml(
+		technicalName,
+		visibleName,
+		currentMode,
+		fileName
+	);
 
-	for (const res of selected) {
-		if (res.type === 'external') {
-			try {
-				const r = await axios.get(res.url);
-				combined += `/* ${res.url} */\n${r.data}\n\n`;
-				console.log(`✅ Loaded external: ${res.url}`);
-			} catch (e) {
-				console.warn(`⚠️ Failed to load ${res.url}: ${e.message}`);
-			}
-		} else if (res.type === 'inline') {
-			combined += `/* ${res.label} */\n${res.content}\n\n`;
-			console.log(`✅ Loaded ${res.label}`);
-		}
-	}
-
-	// Write files
-	fs.mkdirSync(ASSETS_DIR, {recursive: true});
-	fs.writeFileSync(FILE_PATH, combined, 'utf8');
-
-	// YAML content
-	const clientExt = {
-		assemble: [{from: 'assets', into: 'static'}],
-		[technicalName]: {
-			name: nameInput,
-			type: mode === 'css' ? 'globalCSS' : 'globalJS',
-			url: filename,
-			...(mode === 'js' && {
-				scriptElementAttributes: {
-					'async': true,
-					'data-attribute': 'value',
-					'data-senna-track': 'permanent',
-					'fetchpriority': 'low',
-				},
-			}),
-		},
-	};
-
-	fs.writeFileSync(YAML_PATH, yaml.stringify(clientExt), 'utf8');
-
-	// Create ZIP
-	const zip = new AdmZip();
-	zip.addLocalFile(FILE_PATH, 'assets');
-	zip.addLocalFile(YAML_PATH);
-	zip.writeZip(ZIP_PATH);
-
-	console.log(`✅ ${filename} saved in: ${FILE_PATH}`);
-	console.log(`✅ client-extension.yaml created`);
-	console.log(`🎉 Final ZIP created at: ${ZIP_PATH}\n`);
-
-	// Cleanup temp directory
-	fs.rmSync(TEMP_DIR, {recursive: true, force: true});
+	saveFiles(
+		fileName,
+		combined,
+		yamlContent,
+		technicalName,
+		currentMode,
+		noZip
+	);
 }
 
+// --- CLI entry point ---
 (async () => {
 	if (!mode) {
 		await extractResources(url, 'css', sharedName);
 		await extractResources(url, 'js', sharedName);
-	} else if (mode === 'css' || mode === 'js') {
+	} else if (mode in MODES) {
 		await extractResources(url, mode, sharedName);
 	} else {
-		console.error('❌ Invalid mode. Use --mode=css or --mode=js');
+		console.error(
+			`${chalk.red('❌')} Invalid mode. Use --mode=css or --mode=js`
+		);
 		process.exit(1);
 	}
 })();
