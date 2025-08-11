@@ -26,7 +26,7 @@
   .item{display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px dashed #223064}
   .item:last-child{border-bottom:0}
   .small{font-size:.85rem; color:#b9c6e5; word-break:break-all}
-  .toolbar{display:flex; gap:8px; align-items:center; justify-content:space-between; margin:14px 0}
+  .toolbar{display:flex; gap:8px; align-items:center; justify-content:space-between; margin:6px 0}
   .progress{height:10px; background:#1a2b5f; border-radius:999px; overflow:hidden; border:1px solid #25408a}
   .bar{height:100%; width:0%; background:linear-gradient(90deg,#3ad97a,#6aa2ff)}
   .log{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#0b122b; border:1px solid #213067; border-radius:10px; padding:10px; min-height:100px; white-space:pre-wrap}
@@ -56,7 +56,7 @@
         <div>
           <label>Client Extension Visible Name</label>
           <input id="name" type="text" placeholder="Liferay Client Extension" />
-          <div class="muted small" id="slugPreview" style="margin-top:6px;">technical-name will appear here…</div>
+          <div class="muted small" id="slugPreview" style="margin-top:6px;">CX technical-name Label will be:</div>
         </div>
         <div>
           <label>&nbsp;</label>
@@ -97,7 +97,7 @@
         <div class="progress"><div id="bar" class="bar"></div></div>
       </div>
 
-      <div style="display:flex; gap:10px; margin-top:14px;">
+      <div style="display:flex; gap:10px; margin-top:14px; align-items: center;">
         <button id="downloadBtn" class="btn primary" disabled>⬇️ Generate & download ZIP</button>
         <span class="muted small">If mode is “Both”, two ZIPs will be downloaded (sequentially).</span>
       </div>
@@ -290,7 +290,7 @@
     // === EVENTS ===
     $("name").addEventListener("input", () => {
       const v = $("name").value.trim() || "Liferay Client Extension";
-      $("slugPreview").textContent = `technical-name: ${techName(v, $("mode").value === "both" ? "css|js" : $("mode").value)}`;
+      $("slugPreview").textContent = `CX technical-name Label: ${techName(v, $("mode").value === "both" ? "css|js" : $("mode").value)}`;
     });
 
     $("fetchBtn").onclick = async () => {
