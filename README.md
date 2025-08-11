@@ -1,5 +1,11 @@
 # Liferay Client Extension URL Extractor
 
+## Web Version:
+https://marcoscv-work.github.io/Liferay-Client-Extension-URL-Extractor/
+> If web version dosen't work, please use CLI
+
+## CLI
+
 A CLI tool to extract all CSS and/or JS resources from a web page and generate a Liferay Client Extension (CSS or JS).
 
 ---
