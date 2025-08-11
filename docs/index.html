@@ -16,11 +16,13 @@
   label{display:block; font-size:.9rem; color:var(--muted); margin-bottom:6px}
   input[type="text"], select{width:100%; padding:10px 12px; border-radius:10px; border:1px solid #31407a; background:#0e1530; color:var(--txt)}
   .row{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media (max-width: 640px) {.row{grid-template-columns:1fr;}}
   .btn{display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:10px; border:1px solid #2b3c78; background:#101a3a; color:var(--txt); cursor:pointer}
   .btn.primary{background:linear-gradient(180deg,#2c5cff,#2448c9); border-color:#2c5cff}
   .btn:disabled{opacity:.5; cursor:not-allowed}
   .muted{color:var(--muted)}
   #lists{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px}
+  @media (max-width: 640px) {#lists {grid-template-columns: 1fr;}}
   .list{background:#0e1530; border:1px solid #24336b; border-radius:12px; padding:12px; min-height:120px}
   .list h3{margin:0 0 10px; font-size:1rem}
   .item{display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px dashed #223064}
@@ -146,17 +148,34 @@
       const container = modeKey === "css" ? $("cssList") : $("jsList");
       const arr = state[modeKey];
       container.innerHTML = "";
+
+      const frag = document.createDocumentFragment();
+
       arr.forEach((item, idx) => {
         const id = `${modeKey}-${idx}`;
-        const checked = state.selected[modeKey].has(idx) ? "checked" : "";
-        const label = item.type === "external" ? item.url : item.label;
-        container.insertAdjacentHTML("beforeend", `
-          <div class="item">
-            <input type="checkbox" id="${id}" data-mode="${modeKey}" data-idx="${idx}" ${checked} />
-            <label for="${id}" class="small">${label}</label>
-          </div>
-        `);
+
+        const row = document.createElement("div");
+        row.className = "item";
+
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.id = id;
+        input.dataset.mode = modeKey;
+        input.dataset.idx = String(idx);
+        input.checked = state.selected[modeKey].has(idx);
+
+        const label = document.createElement("label");
+        label.htmlFor = id;
+        label.className = "small";
+        // IMPORTANT: textContent prevents <script>/<style> from being parsed
+        label.textContent = item.type === "external" ? item.url : item.label;
+
+        row.appendChild(input);
+        row.appendChild(label);
+        frag.appendChild(row);
       });
+
+      container.appendChild(frag);
     }
 
     function attachListEvents() {
