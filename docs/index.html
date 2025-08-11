@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Liferay Client Extension Extractor (Web)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    --bg:#0b1020; --panel:#121935; --muted:#95a2c2; --txt:#e9eef9; --accent:#6aa2ff; --ok:#3ad97a; --warn:#ffcc66; --err:#ff7272;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background:var(--bg); color:var(--txt)}
+  .wrap{max-width:980px; margin:40px auto; padding:0 16px}
+  h1{font-size:1.4rem; margin:0 0 16px}
+  .card{background:var(--panel); border:1px solid #1e2a56; border-radius:14px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,.25)}
+  label{display:block; font-size:.9rem; color:var(--muted); margin-bottom:6px}
+  input[type="text"], select{width:100%; padding:10px 12px; border-radius:10px; border:1px solid #31407a; background:#0e1530; color:var(--txt)}
+  .row{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  .btn{display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:10px; border:1px solid #2b3c78; background:#101a3a; color:var(--txt); cursor:pointer}
+  .btn.primary{background:linear-gradient(180deg,#2c5cff,#2448c9); border-color:#2c5cff}
+  .btn:disabled{opacity:.5; cursor:not-allowed}
+  .muted{color:var(--muted)}
+  #lists{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px}
+  .list{background:#0e1530; border:1px solid #24336b; border-radius:12px; padding:12px; min-height:120px}
+  .list h3{margin:0 0 10px; font-size:1rem}
+  .item{display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px dashed #223064}
+  .item:last-child{border-bottom:0}
+  .small{font-size:.85rem; color:#b9c6e5; word-break:break-all}
+  .toolbar{display:flex; gap:8px; align-items:center; justify-content:space-between; margin:14px 0}
+  .progress{height:10px; background:#1a2b5f; border-radius:999px; overflow:hidden; border:1px solid #25408a}
+  .bar{height:100%; width:0%; background:linear-gradient(90deg,#3ad97a,#6aa2ff)}
+  .log{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#0b122b; border:1px solid #213067; border-radius:10px; padding:10px; min-height:100px; white-space:pre-wrap}
+  .tag{display:inline-block; padding:2px 8px; border-radius:999px; font-size:.8rem; border:1px solid #304184; color:#cbd6f5; background:#0f193b}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🌐 Liferay Client Extension Extractor (Web)</h1>
+    <div class="card">
+      <div class="row">
+        <div>
+          <label>Target URL</label>
+          <input id="url" type="text" placeholder="https://www.liferay.com/en/home" />
+        </div>
+        <div>
+          <label>Mode</label>
+          <select id="mode">
+            <option value="css">CSS</option>
+            <option value="js">JS</option>
+            <option value="both">Both</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:12px;">
+        <div>
+          <label>Client Extension Visible Name</label>
+          <input id="name" type="text" placeholder="Liferay Client Extension" />
+          <div class="muted small" id="slugPreview" style="margin-top:6px;">technical-name will appear here…</div>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <div class="toolbar">
+            <button id="fetchBtn" class="btn">🔎 Fetch resources</button>
+            <span class="tag" id="summary">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="lists" style="display:none;">
+        <div class="list">
+          <h3>CSS resources</h3>
+          <div class="toolbar">
+            <div>
+              <button id="cssSelectAll" class="btn">Select all</button>
+              <button id="cssSelectNone" class="btn">Select none</button>
+            </div>
+            <span class="tag" id="cssCount">0 selected</span>
+          </div>
+          <div id="cssList"></div>
+        </div>
+
+        <div class="list">
+          <h3>JS resources</h3>
+          <div class="toolbar">
+            <div>
+              <button id="jsSelectAll" class="btn">Select all</button>
+              <button id="jsSelectNone" class="btn">Select none</button>
+            </div>
+            <span class="tag" id="jsCount">0 selected</span>
+          </div>
+          <div id="jsList"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <div class="progress"><div id="bar" class="bar"></div></div>
+      </div>
+
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button id="downloadBtn" class="btn primary" disabled>⬇️ Generate & download ZIP</button>
+        <span class="muted small">If mode is “Both”, two ZIPs will be downloaded (sequentially).</span>
+      </div>
+
+      <div style="margin-top:16px;" class="log" id="log"></div>
+    </div>
+  </div>
+
+  <!-- libs (sin SRI para evitar bloqueos por hash) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+
+  <script>
+    // === CONFIG ===
+    const PROXY = "https://marcoscv-workers.marcoscv.workers.dev"; // tu Worker
+    const px = (u) => `${PROXY}?url=${encodeURIComponent(u)}`;
+
+    // === STATE ===
+    const state = {
+      css: [],
+      js: [],
+      url: "",
+      mode: "css",
+      name: "",
+      selected: { css: new Set(), js: new Set() },
+    };
+
+    // === UI HELPERS ===
+    const $ = (id) => document.getElementById(id);
+    const log = (msg) => { $("log").textContent += msg + "\n"; }; // <-- \n real
+    const setProgress = (ratio) => { $("bar").style.width = Math.max(0, Math.min(100, Math.round(ratio*100))) + "%"; };
+
+    const slugify = (s) => s.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9\-]/g, "");
+    const techName = (visible, suffix) => `${slugify(visible)}-${suffix}`;
+
+    function renderCounts() {
+      $("cssCount").textContent = `${state.selected.css.size} selected`;
+      $("jsCount").textContent  = `${state.selected.js.size} selected`;
+      const totalSel = state.selected.css.size + state.selected.js.size;
+      $("summary").textContent = `${totalSel} selected in total`;
+      $("downloadBtn").disabled = totalSel === 0;
+    }
+
+    function renderList(modeKey) {
+      const container = modeKey === "css" ? $("cssList") : $("jsList");
+      const arr = state[modeKey];
+      container.innerHTML = "";
+      arr.forEach((item, idx) => {
+        const id = `${modeKey}-${idx}`;
+        const checked = state.selected[modeKey].has(idx) ? "checked" : "";
+        const label = item.type === "external" ? item.url : item.label;
+        container.insertAdjacentHTML("beforeend", `
+          <div class="item">
+            <input type="checkbox" id="${id}" data-mode="${modeKey}" data-idx="${idx}" ${checked} />
+            <label for="${id}" class="small">${label}</label>
+          </div>
+        `);
+      });
+    }
+
+    function attachListEvents() {
+      ["cssList","jsList"].forEach(listId => {
+        $(listId).addEventListener("change", (e) => {
+          if (e.target && e.target.matches('input[type="checkbox"]')) {
+            const modeKey = e.target.dataset.mode;
+            const idx = parseInt(e.target.dataset.idx, 10);
+            if (e.target.checked) state.selected[modeKey].add(idx);
+            else state.selected[modeKey].delete(idx);
+            renderCounts();
+          }
+        });
+      });
+
+      $("cssSelectAll").onclick = () => {
+        state.selected.css = new Set(state.css.map((_, i) => i)); renderList("css"); renderCounts();
+      };
+      $("cssSelectNone").onclick = () => {
+        state.selected.css.clear(); renderList("css"); renderCounts();
+      };
+      $("jsSelectAll").onclick = () => {
+        state.selected.js = new Set(state.js.map((_, i) => i)); renderList("js"); renderCounts();
+      };
+      $("jsSelectNone").onclick = () => {
+        state.selected.js.clear(); renderList("js"); renderCounts();
+      };
+    }
+
+    // === FETCH & PARSE ===
+    async function fetchHTML(url) {
+      const res = await fetch(px(url));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    }
+
+    function parseResources(html, baseUrl, mode) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      const found = [];
+
+      if (mode === "css") {
+        doc.querySelectorAll('link[rel="stylesheet"]').forEach(el => {
+          const href = el.getAttribute("href");
+          if (href) found.push({ type: "external", url: new URL(href, baseUrl).href });
+        });
+        doc.querySelectorAll("style").forEach((el, i) => {
+          const content = el.textContent || "";
+          if (content.trim()) found.push({ type: "inline", label: `<style> inline #${i+1}`, content });
+        });
+      } else {
+        doc.querySelectorAll("script").forEach((el, i) => {
+          const src = el.getAttribute("src");
+          if (src) {
+            found.push({ type: "external", url: new URL(src, baseUrl).href });
+          } else {
+            const content = el.textContent || "";
+            if (content.trim()) found.push({ type: "inline", label: `<script> inline #${i+1}`, content });
+          }
+        });
+      }
+      return found;
+    }
+
+    async function fetchSelectedAndCombine(modeKey, selectedIdxs) {
+      const list = state[modeKey];
+      let combined = "";
+      let done = 0;
+
+      for (const idx of selectedIdxs) {
+        const item = list[idx];
+        if (item.type === "external") {
+          try {
+            const r = await fetch(px(item.url));
+            const txt = await r.text();
+            combined += `/* ${item.url} */\n${txt}\n\n`; // <-- \n reales
+            log(`✅ Loaded external: ${item.url}`);
+          } catch (e) {
+            log(`⚠️ Failed: ${item.url} — ${e.message}`);
+          }
+        } else {
+          combined += `/* ${item.label} */\n${item.content}\n\n`;
+          log(`✅ Loaded ${item.label}`);
+        }
+        done++;
+        setProgress(done / selectedIdxs.length);
+      }
+
+      return combined;
+    }
+
+    function buildYaml(visibleName, modeKey, fileName) {
+      const key = techName(visibleName, modeKey);
+      const obj = {
+        assemble: [{ from: "assets", into: "static" }],
+        [key]: {
+          name: visibleName,
+          type: modeKey === "css" ? "globalCSS" : "globalJS",
+          url: fileName
+        }
+      };
+      if (modeKey === "js") {
+        obj[key].scriptElementAttributes = {
+          async: true,
+          "data-attribute": "value",
+          "data-senna-track": "permanent",
+          fetchpriority: "low"
+        };
+      }
+      return jsyaml.dump(obj);
+    }
+
+    async function generateZipAndDownload(visibleName, modeKey, combined) {
+      if (!window.JSZip || !window.saveAs) {
+        alert("JSZip or FileSaver not loaded. Check network console.");
+        return;
+      }
+      const zip = new JSZip();
+      const fileName = modeKey === "css" ? "global.css" : "global.js";
+      const yamlStr = buildYaml(visibleName, modeKey, fileName);
+
+      zip.file(`assets/${fileName}`, combined);
+      zip.file("client-extension.yaml", yamlStr);
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      // Pequeña pausa para asegurar UI y permitir múltiples descargas seguidas
+      await new Promise(r => setTimeout(r, 150));
+      saveAs(blob, `${techName(visibleName, modeKey)}.zip`);
+    }
+
+    // === EVENTS ===
+    $("name").addEventListener("input", () => {
+      const v = $("name").value.trim() || "Liferay Client Extension";
+      $("slugPreview").textContent = `technical-name: ${techName(v, $("mode").value === "both" ? "css|js" : $("mode").value)}`;
+    });
+
+    $("fetchBtn").onclick = async () => {
+      $("log").textContent = "";
+      setProgress(0);
+      $("lists").style.display = "none";
+      $("cssList").innerHTML = "";
+      $("jsList").innerHTML = "";
+      state.selected.css.clear();
+      state.selected.js.clear();
+      renderCounts();
+
+      const url = $("url").value.trim();
+      const mode = $("mode").value;
+      const name = $("name").value.trim() || "Liferay Client Extension";
+
+      if (!/^[a-zA-Z0-9\s\-]+$/.test(name)) {
+        alert("Visible name: only letters, numbers, spaces and dashes are allowed.");
+        return;
+      }
+      if (!url) { alert("Please enter a URL"); return; }
+
+      state.url = url; state.mode = mode; state.name = name;
+
+      try {
+        const html = await fetchHTML(url);
+
+        if (mode === "css" || mode === "both") {
+          state.css = parseResources(html, url, "css");
+          state.selected.css = new Set(state.css.map((_, i) => i));
+          renderList("css");
+        } else { state.css = []; }
+
+        if (mode === "js" || mode === "both") {
+          state.js = parseResources(html, url, "js");
+          state.selected.js = new Set(state.js.map((_, i) => i));
+          renderList("js");
+        } else { state.js = []; }
+
+        $("lists").style.display = "grid";
+        renderCounts();
+        log(`Found CSS: ${state.css.length} — JS: ${state.js.length}`);
+      } catch (e) {
+        log(`❌ Fetch error: ${e.message}`);
+      }
+    };
+
+    attachListEvents();
+
+    $("downloadBtn").onclick = async () => {
+      $("log").textContent = "";
+      setProgress(0);
+
+      const mode = state.mode;
+      const name = state.name;
+
+      if (mode === "css" || mode === "both") {
+        const idxs = Array.from(state.selected.css);
+        if (idxs.length) {
+          log("⏬ Building CSS bundle…");
+          const combined = await fetchSelectedAndCombine("css", idxs);
+          await generateZipAndDownload(name, "css", combined);
+        } else {
+          log("⚠️ No CSS selected.");
+        }
+      }
+
+      if (mode === "js" || mode === "both") {
+        const idxs = Array.from(state.selected.js);
+        if (idxs.length) {
+          log("⏬ Building JS bundle…");
+          const combined = await fetchSelectedAndCombine("js", idxs);
+          // pequeño delay para evitar que el navegador bloquee la 2ª descarga
+          await new Promise(r => setTimeout(r, 250));
+          await generateZipAndDownload(name, "js", combined);
+        } else {
+          log("⚠️ No JS selected.");
+        }
+      }
+
+      setProgress(1);
+      log("🎉 Done.");
+    };
+  </script>
+</body>
+</html>
